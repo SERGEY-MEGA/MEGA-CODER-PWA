@@ -270,6 +270,7 @@ function IdeWorkspace() {
 
   // Layout
   const [previewOpen, setPreviewOpen] = useState(true);
+  const [previewFullscreen, setPreviewFullscreen] = useState(false);
   const [sidebarMode, setSidebarMode] = useState<"project" | "guide" | "settings">("project");
   const [theme, setTheme] = useState<"dark" | "light" | "system">("dark");
 
@@ -873,11 +874,19 @@ function IdeWorkspace() {
           </div>
 
           {/* Preview — внизу, над терминалом */}
-          {previewOpen && (
+          {previewOpen && !previewFullscreen && (
             <div className="preview-pane">
               <div className="pane-hdr">
                 <span>Предпросмотр</span>
                 <span className="pane-badge">Автообновление</span>
+                <button
+                  type="button"
+                  className="fullscreen-btn"
+                  title="Во весь экран"
+                  onClick={() => setPreviewFullscreen(true)}
+                >
+                  ⛶
+                </button>
                 <button
                   type="button"
                   className="close-x"
@@ -890,6 +899,29 @@ function IdeWorkspace() {
                 <SandpackPreview
                   showOpenInCodeSandbox={false}
                   style={{ height: "100%" }}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Fullscreen Preview */}
+          {previewFullscreen && (
+            <div className="preview-fullscreen">
+              <div className="pane-hdr">
+                <span>Предпросмотр — полный экран</span>
+                <button
+                  type="button"
+                  className="close-x"
+                  title="Выход из полноэкранного режима"
+                  onClick={() => setPreviewFullscreen(false)}
+                >
+                  ✕
+                </button>
+              </div>
+              <div className="preview-fullscreen-body">
+                <SandpackPreview
+                  showOpenInCodeSandbox={false}
+                  style={{ height: "100%", width: "100%" }}
                 />
               </div>
             </div>
