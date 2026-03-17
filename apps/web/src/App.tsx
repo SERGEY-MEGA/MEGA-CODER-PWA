@@ -214,15 +214,22 @@ function stripFencedCodeBlocks(text: string): string {
 }
 
 function extractStreamingCode(text: string): string | null {
-  const start = text.indexOf("```");
-  if (start < 0) return null;
-  const afterFence = text.slice(start + 3);
-  const firstNl = afterFence.indexOf("\n");
-  if (firstNl < 0) return "";
-  const codeStart = start + 3 + firstNl + 1;
-  const end = text.indexOf("```", codeStart);
-  if (end >= 0) return text.slice(codeStart, end).trimEnd();
-  return text.slice(codeStart);
+  const codeBlockStart = text.indexOf("```");
+  if (codeBlockStart < 0) return null;
+
+  const afterMarker = text.slice(codeBlockStart + 3);
+  const newlineIdx = afterMarker.indexOf("\n");
+  if (newlineIdx < 0) return null;
+
+  const contentStart = codeBlockStart + 3 + newlineIdx + 1;
+  const contentText = text.slice(contentStart);
+
+  const closeMarkerIdx = contentText.indexOf("```");
+  if (closeMarkerIdx >= 0) {
+    return contentText.slice(0, closeMarkerIdx).trimEnd();
+  }
+
+  return contentText;
 }
 
 function isAsyncIterableValue(value: unknown): value is AsyncIterable<unknown> {
@@ -500,17 +507,6 @@ function IdeWorkspace() {
       const filePath = sandpack.activeFile;
       const originalCode = sandpack.files[filePath]?.code ?? "";
       let fullReply = "";
-      let streamApplied = false;
-
-      const applyStreamingDraft = (buffer: string) => {
-        const streamingCode = extractStreamingCode(buffer);
-        if (streamingCode === null) return;
-        if (!streamApplied) {
-          setIsApplyingCode(true);
-          streamApplied = true;
-        }
-        sandpack.updateFile(filePath, streamingCode);
-      };
 
       if (provider.kind === "ollama") {
         const model = provider.modelId.replace("ollama:", "");
@@ -525,15 +521,21 @@ function IdeWorkspace() {
               model
           );
         }
+
+        setIsApplyingCode(true);
         const reader = r.body.getReader();
         const decoder = new TextDecoder();
         let pending = "";
+        let hasStartedCode = false;
+
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
+
           pending += decoder.decode(value, { stream: true });
           const lines = pending.split("\n");
           pending = lines.pop() ?? "";
+
           for (const line of lines) {
             if (!line.trim()) continue;
             try {
@@ -541,7 +543,13 @@ function IdeWorkspace() {
               const chunk = part.message?.content ?? "";
               if (chunk) {
                 fullReply += chunk;
-                applyStreamingDraft(fullReply);
+                const code = extractStreamingCode(fullReply);
+                if (code !== null && code !== undefined) {
+                  if (!hasStartedCode) {
+                    hasStartedCode = true;
+                  }
+                  sandpack.updateFile(filePath, code);
+                }
               }
             } catch {
               // ignore malformed stream frames
@@ -549,6 +557,7 @@ function IdeWorkspace() {
           }
         }
       } else if (provider.kind === "puter") {
+        setIsApplyingCode(true);
         await loadPuter();
         if (!window.puter?.ai?.chat) {
           throw new Error(
@@ -561,38 +570,50 @@ function IdeWorkspace() {
           temperature: 0.2,
         });
         if (isAsyncIterableValue(streamResult)) {
+          let hasStartedCode = false;
           for await (const chunk of streamResult) {
             const piece = extractChunkText(chunk);
             if (!piece) continue;
             fullReply += piece;
-            applyStreamingDraft(fullReply);
+            const code = extractStreamingCode(fullReply);
+            if (code !== null && code !== undefined) {
+              if (!hasStartedCode) {
+                hasStartedCode = true;
+              }
+              sandpack.updateFile(filePath, code);
+            }
           }
         } else {
           fullReply = normalizePuter(streamResult);
+          const code = extractStreamingCode(fullReply);
+          if (code) sandpack.updateFile(filePath, code);
         }
       } else {
+        setIsApplyingCode(true);
         fullReply = await callAIForCurrentProvider([sys, ...history]);
       }
 
       const reply = fullReply;
       const code = extractCode(reply);
       const commentary = stripFencedCodeBlocks(reply);
+
       setMessages((prev) => [
         ...prev,
         {
           role: "assistant",
           content:
             commentary ||
-            "Готово. Сгенерировал код и применяю его в редактор в реальном времени.",
+            "Готово. Код уже печатается в редактор.",
         },
       ]);
+
       if (code) {
         setLastGeneratedCode(code);
         sandpack.updateFile(filePath, code);
-      } else if (!streamApplied) {
-        // Если модель не вернула fenced code, откатываем файл.
+      } else if (!fullReply.includes("```")) {
         sandpack.updateFile(filePath, originalCode);
       }
+
       setIsApplyingCode(false);
     } catch (err) {
       setMessages((prev) => [
