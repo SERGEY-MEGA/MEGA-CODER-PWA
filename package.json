@@ -1,0 +1,16 @@
+{
+  "name": "mega-coder",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev:web": "npm run dev -w @mega-coder/web",
+    "build:web": "npm run build -w @mega-coder/web",
+    "preview:web": "npm run preview -w @mega-coder/web"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "packageManager": "npm@10"
+}
